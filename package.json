@@ -1,0 +1,18 @@
+{
+  "name": "electron-sync-store-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm --recursive build",
+    "test": "vitest run",
+    "typecheck": "pnpm --recursive typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
