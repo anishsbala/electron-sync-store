@@ -1,23 +1,11 @@
 import { assertSerializableRecord } from "./serializable.js";
+import { applyShallowPatch, hasShallowChanges } from "./patch.js";
 import type {
   SerializableShape,
   SetStateAction,
   StateListener,
-  StatePatch,
   Store,
 } from "./types.js";
-
-function hasShallowChange<State extends object>(
-  state: State,
-  patch: StatePatch<State>,
-): boolean {
-  const current = state as Record<PropertyKey, unknown>;
-  const candidate = patch as Record<PropertyKey, unknown>;
-
-  return Object.keys(patch).some(
-    (key) => !Object.is(current[key], candidate[key]),
-  );
-}
 
 export function createStore<State extends object>(
   initialState: State & SerializableShape<State>,
@@ -37,12 +25,12 @@ export function createStore<State extends object>(
 
     assertSerializableRecord(patch, "patch");
 
-    if (!hasShallowChange(state, patch)) {
+    if (!hasShallowChanges<State>(state, patch)) {
       return;
     }
 
     const previousState = state;
-    state = { ...state, ...patch };
+    state = applyShallowPatch<State>(state, patch);
 
     for (const listener of [...listeners]) {
       listener(state, previousState);
