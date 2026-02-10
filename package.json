@@ -9,9 +9,10 @@
   "scripts": {
     "build": "pnpm --recursive build",
     "test": "vitest run",
-    "typecheck": "pnpm --recursive typecheck"
+    "typecheck": "pnpm --filter @electron-sync-store/core build && pnpm --recursive typecheck"
   },
   "devDependencies": {
+    "@types/node": "^24.3.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

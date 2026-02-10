@@ -1,0 +1,26 @@
+{
+  "name": "@electron-sync-store/main",
+  "version": "0.0.0",
+  "description": "Electron-independent canonical state coordination for electron-sync-store",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@electron-sync-store/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
