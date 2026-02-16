@@ -4,3 +4,5 @@ export type {
   MainStore,
   MainStoreOptions,
 } from "./main-store.js";
+export { createElectronSyncMain } from "./store-registry.js";
+export type { MainStoreRegistry } from "./store-registry.js";

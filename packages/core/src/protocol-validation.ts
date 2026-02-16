@@ -8,6 +8,7 @@ import {
   type MutationRequest,
   type MutationResult,
   type ResyncRequest,
+  type ResyncResult,
   type ResyncResponse,
   type Snapshot,
 } from "./protocol.js";
@@ -159,7 +160,9 @@ export function assertMutationRejection(
     assertNonEmptyString(value.serverEpoch, "mutationRejection.serverEpoch");
   }
   assertNonEmptyString(value.clientId, "mutationRejection.clientId");
-  assertNonEmptyString(value.mutationId, "mutationRejection.mutationId");
+  if (value.mutationId !== null) {
+    assertNonEmptyString(value.mutationId, "mutationRejection.mutationId");
+  }
   if (value.revision !== null) {
     assertRevision(value.revision, "mutationRejection.revision");
   }
@@ -218,4 +221,20 @@ export function assertResyncResponse<State extends object>(
   assertSnapshot<State>(value.snapshot);
   assertStringArray(value.appliedMutationIds, "resyncResponse.appliedMutationIds");
   assertStringArray(value.noopMutationIds, "resyncResponse.noopMutationIds");
+}
+
+export function assertResyncResult<State extends object>(
+  value: unknown,
+): asserts value is ResyncResult<State> {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as UnknownRecord).type === "rejected"
+  ) {
+    assertMutationRejection(value);
+    return;
+  }
+
+  assertResyncResponse<State>(value);
 }

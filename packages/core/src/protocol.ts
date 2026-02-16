@@ -62,7 +62,7 @@ export interface MutationRejection {
   storeId: string;
   serverEpoch: string | null;
   clientId: string;
-  mutationId: string;
+  mutationId: string | null;
   revision: number | null;
   code: MutationRejectionCode;
   message: string;
@@ -88,3 +88,7 @@ export interface ResyncResponse<State extends object> {
   appliedMutationIds: string[];
   noopMutationIds: string[];
 }
+
+export type ResyncResult<State extends object> =
+  | ResyncResponse<State>
+  | MutationRejection;

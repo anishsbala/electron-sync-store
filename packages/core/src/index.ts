@@ -14,6 +14,7 @@ export {
   assertMutationRequest,
   assertMutationResult,
   assertResyncRequest,
+  assertResyncResult,
   assertResyncResponse,
   assertSnapshot,
   isConnectRequest,
@@ -30,6 +31,7 @@ export type {
   MutationRequest,
   MutationResult,
   ResyncRequest,
+  ResyncResult,
   ResyncResponse,
   Snapshot,
 } from "./protocol.js";
