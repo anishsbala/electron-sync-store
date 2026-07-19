@@ -5,6 +5,13 @@ export {
   isSerializableRecord,
 } from "./serializable.js";
 export { applyShallowPatch, hasShallowChanges } from "./patch.js";
+export {
+  COMMIT_CHANNEL,
+  CONNECT_CHANNEL,
+  ELECTRON_SYNC_STORE_BRIDGE_KEY,
+  MUTATE_CHANNEL,
+  RESYNC_CHANNEL,
+} from "./channels.js";
 export { PROTOCOL_VERSION } from "./protocol.js";
 export {
   assertCommit,

@@ -20,6 +20,9 @@
   "dependencies": {
     "@electron-sync-store/core": "workspace:*"
   },
+  "peerDependencies": {
+    "electron": ">=28"
+  },
   "engines": {
     "node": ">=20"
   }

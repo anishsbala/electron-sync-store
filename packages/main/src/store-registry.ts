@@ -13,6 +13,11 @@ import {
   type MainStore,
   type MainStoreOptions,
 } from "./main-store.js";
+import {
+  installElectronMainAdapter,
+  type ElectronMainInstallation,
+  type ElectronMainInstallOptions,
+} from "./electron-main-adapter.js";
 
 type ErasedMainStore = MainStore<object>;
 
@@ -34,6 +39,7 @@ export interface MainStoreRegistry {
   ): MainStore<State> | undefined;
   handleMutation<State extends object>(request: unknown): MutationResult<State>;
   handleResync<State extends object>(request: unknown): ResyncResult<State>;
+  installElectron(options?: ElectronMainInstallOptions): ElectronMainInstallation;
 }
 
 function requireRoutingString(
@@ -83,6 +89,7 @@ function createRoutingRejection(
 
 export function createElectronSyncMain(): MainStoreRegistry {
   const stores = new Map<string, ErasedMainStore>();
+  let electronInstallation: ElectronMainInstallation | undefined;
 
   function registerStore<State extends object>(
     store: MainStore<State>,
@@ -165,11 +172,38 @@ export function createElectronSyncMain(): MainStoreRegistry {
     };
   }
 
-  return {
+  function installElectron(
+    options?: ElectronMainInstallOptions,
+  ): ElectronMainInstallation {
+    if (electronInstallation !== undefined) {
+      throw new Error("Electron synchronization transport is already installed");
+    }
+
+    const installation = installElectronMainAdapter(registry, options);
+    let active = true;
+    const publicInstallation: ElectronMainInstallation = {
+      uninstall() {
+        if (!active) {
+          return;
+        }
+        active = false;
+        installation.uninstall();
+        if (electronInstallation === publicInstallation) {
+          electronInstallation = undefined;
+        }
+      },
+    };
+    electronInstallation = publicInstallation;
+    return publicInstallation;
+  }
+
+  const registry: MainStoreRegistry = {
     createStore,
     registerStore,
     getStore,
     handleMutation,
     handleResync,
+    installElectron,
   };
+  return registry;
 }
