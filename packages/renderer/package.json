@@ -1,0 +1,33 @@
+{
+  "name": "@electron-sync-store/renderer",
+  "version": "0.0.0",
+  "description": "Hydrated renderer replicas and preload bridge for electron-sync-store",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./preload": {
+      "types": "./dist/preload/index.d.ts",
+      "import": "./dist/preload/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@electron-sync-store/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "electron": ">=28"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

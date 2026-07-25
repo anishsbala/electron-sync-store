@@ -32,6 +32,15 @@ importers:
         specifier: '>=28'
         version: 44.1.0
 
+  packages/renderer:
+    dependencies:
+      '@electron-sync-store/core':
+        specifier: workspace:*
+        version: link:../core
+      electron:
+        specifier: '>=28'
+        version: 44.1.0
+
 packages:
 
   '@electron-internal/extract-zip@1.0.5':
