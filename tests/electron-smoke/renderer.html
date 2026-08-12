@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>electron-sync-store smoke</title>
+  </head>
+  <body>
+    <script>
+      let resolveCommit;
+      const commitPromise = new Promise((resolve) => {
+        resolveCommit = resolve;
+      });
+
+      window.startElectronSyncStoreSmoke = async () => {
+        window.electronSyncStore.onCommit((commit) => resolveCommit(commit));
+        return window.electronSyncStore.connect({
+          protocolVersion: 1,
+          storeId: "app",
+          clientId: crypto.randomUUID(),
+        });
+      };
+
+      window.waitForElectronSyncStoreCommit = () => commitPromise;
+    </script>
+  </body>
+</html>
