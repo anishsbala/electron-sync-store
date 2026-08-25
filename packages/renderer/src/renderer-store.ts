@@ -152,13 +152,16 @@ export async function createRendererStore<State extends object>(
     }
 
     const previousState = canonicalState;
-    if (hasShallowChanges<State>(canonicalState, commit.patch)) {
+    const stateChanged = hasShallowChanges<State>(canonicalState, commit.patch);
+    if (stateChanged) {
       canonicalState = applyShallowPatch<State>(canonicalState, commit.patch);
+    }
+    updateSyncState({ revision: commit.revision });
+    if (stateChanged) {
       for (const listener of [...stateListeners]) {
         listener(canonicalState, previousState);
       }
     }
-    updateSyncState({ revision: commit.revision });
   }
 
   function validateCommit(message: unknown): Commit<State> {

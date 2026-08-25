@@ -192,14 +192,16 @@ describe("createRendererStore", () => {
       const { store, transport } = await hydratedStore();
       const events: string[] = [];
       store.subscribe((state, previousState) => {
-        events.push(`${previousState.counter}->${state.counter}`);
+        events.push(
+          `${previousState.counter}->${state.counter}@${store.getSyncState().revision}`,
+        );
       });
 
       events.push("before");
       transport.deliverCommit(commit(11, { counter: 11 }));
       events.push("after");
 
-      expect(events).toEqual(["before", "10->11", "after"]);
+      expect(events).toEqual(["before", "10->11@11", "after"]);
       expect(store.getState().counter).toBe(11);
       expect(store.getSyncState().revision).toBe(11);
     });
