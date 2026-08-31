@@ -26,20 +26,22 @@ async function runSmokeTest() {
     const snapshot = await window.webContents.executeJavaScript(
       "window.startElectronSyncStoreSmoke()",
     );
-    if (snapshot.revision !== 0 || snapshot.state.counter !== 0) {
+    if (snapshot.sync.revision !== 0 || snapshot.state.counter !== 0) {
       throw new Error(`Unexpected initial snapshot: ${JSON.stringify(snapshot)}`);
     }
 
+    await window.webContents.executeJavaScript(
+      "window.armElectronSyncStoreCommitWait()",
+    );
     store.setState({ counter: 1 });
-    const commit = await window.webContents.executeJavaScript(
+    const update = await window.webContents.executeJavaScript(
       "window.waitForElectronSyncStoreCommit()",
     );
     if (
-      commit.type !== "commit" ||
-      commit.revision !== 1 ||
-      commit.patch.counter !== 1
+      update.sync.revision !== 1 ||
+      update.state.counter !== 1
     ) {
-      throw new Error(`Unexpected commit: ${JSON.stringify(commit)}`);
+      throw new Error(`Unexpected renderer update: ${JSON.stringify(update)}`);
     }
 
     console.log("Electron smoke passed: renderer received Commit revision 1");
