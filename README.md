@@ -220,6 +220,45 @@ renderer updates are not atomic across processes. If two renderers calculate
 value, and the canonical result can reflect only one increment. Same-key
 conflicts use last-commit-wins ordering as assigned by the main process.
 
+## Interactive Electron demo
+
+The workspace includes a real Electron + React application built exclusively
+through the packages' public entrypoints:
+
+```sh
+pnpm demo
+```
+
+It opens three independent renderer processes connected to the same canonical
+`"demo"` store:
+
+- **Controller** performs synchronous optimistic counter, profile, status, and
+  shared-theme updates. It can also issue a narrow demo command that calls the
+  canonical main store's `setState()`, reopen closed windows, and use
+  `store.flush()` as an explicit synchronization barrier.
+- **Observer** is a read-only replica. Closing it, changing state, and reopening
+  it demonstrates late hydration from the current canonical snapshot with a
+  new renderer client ID.
+- **Inspector** presents public visible state and synchronization metadata,
+  plus a bounded renderer-local timeline built from `subscribe()` and
+  `subscribeSync()`. It does not claim to expose private or raw commit data.
+
+Try clicking **+1** or **Burst 10 Updates**, watching Observer converge, changing
+the shared theme, and using **Increment From Main**. Then close Observer, make
+more changes, choose **Reopen Observer**, and verify that the new replica starts
+at the current state and revision. **Wait For Sync** demonstrates that local
+state is visible immediately while `flush()` waits for the renderer's
+synchronization work to settle.
+
+The example keeps Electron isolation enabled and exposes only the library's
+narrow preload bridge plus three demo-specific commands. It requires no
+network services at runtime. A deterministic noninteractive launch check is
+also available:
+
+```sh
+pnpm smoke:demo
+```
+
 The shared protocol and all transport-boundary validators are available from
-`@electron-sync-store/core`. A polished Electron demo, durable persistence,
-and release hardening remain deferred.
+`@electron-sync-store/core`. Durable persistence and release hardening remain
+deferred.
