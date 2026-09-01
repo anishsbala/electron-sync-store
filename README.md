@@ -78,6 +78,10 @@ store.setState({ counter: 5 });
 console.log(store.getState().counter); // 5 immediately.
 
 store.setState((state) => ({ counter: state.counter + 1 }));
+
+await store.flush();
+// This renderer's synchronization work has settled.
+
 store.subscribe((state, previousState) => {
   console.log(previousState.counter, state.counter);
 });
@@ -117,7 +121,49 @@ may arrive first without applying a transition twice. `MutationNoop` removes
 the acknowledged pending mutation without advancing the renderer's canonical
 revision. A definitive `MutationRejection` removes only the rejected mutation
 and rebuilds visible state, while a transport failure retains the uncertain
-mutation and moves synchronization status to `error` for later recovery.
+mutation and starts snapshot recovery. Only exhausted or unrecoverable work
+moves synchronization status to `error`.
+
+## Recovery and synchronization barriers
+
+A rejected mutation IPC Promise is treated as uncertain, not as a definitive
+mutation rejection. The renderer keeps the optimistic patch and its original
+`mutationId`, requests a snapshot containing every pending mutation ID, and
+uses main's processed-outcome history to reconcile it:
+
+- IDs in `appliedMutationIds` are already represented by the snapshot and are
+  removed from the pending queue.
+- IDs in `noopMutationIds` are removed without applying their patch or
+  incrementing the canonical revision.
+- Unknown IDs remain pending and are retried with the same ID and patch.
+
+Snapshots replace the renderer's canonical state, revision, and `serverEpoch`.
+Remaining pending patches are then replayed in local submission order. Commits
+received during resync are buffered, discarded when already represented by the
+snapshot, and otherwise applied only as a contiguous same-epoch revision
+sequence. Gaps require another snapshot rather than unsafe incremental
+application.
+
+Recovery is bounded and coalesced. A renderer runs one resync at a time, allows
+three mutation submission attempts and three resync attempts by default, holds
+at most 1,000 pending mutations, and buffers at most 256 recovery commits.
+These limits can be adjusted with `maxMutationAttempts`, `maxResyncAttempts`,
+`maxPendingMutations`, and `maxBufferedCommits` when creating the renderer
+store. Exhausted recovery enters `error` and exposes the terminal `Error`
+through `getSyncState()`.
+
+`flush()` resolves when this renderer is synced, has no pending mutations, and
+has no recovery in flight. Multiple callers share the same underlying work.
+It rejects if the store reaches terminal error or is destroyed. It is a store
+synchronization barrier—not a UI rendering barrier, cross-machine durability
+guarantee, or exactly-once persistence guarantee.
+
+If main restarts, its new store lifetime has a new epoch and cannot know the
+previous lifetime's in-memory mutation history. Unresolved renderer patches
+are treated as local intent and retried into the new epoch with the same
+mutation IDs and patches, but with the new epoch and its current canonical
+revision. This MVP does not claim exactly-once durability across main-process
+restarts.
 
 ## Synchronization semantics
 
@@ -129,6 +175,5 @@ value, and the canonical result can reflect only one increment. Same-key
 conflicts use last-commit-wins ordering as assigned by the main process.
 
 The shared protocol and all transport-boundary validators are available from
-`@electron-sync-store/core`. Full pending-aware gap/epoch recovery, same-ID
-retry, `flush()`, bounded pending queues, and React integration remain
-deferred.
+`@electron-sync-store/core`. React integration, a polished Electron demo,
+durable persistence, and release hardening remain deferred.
