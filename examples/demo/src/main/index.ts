@@ -196,7 +196,7 @@ async function runSmoke(): Promise<void> {
     );
   }
 
-  const screenshots = await captureWindows();
+  const screenshots = process.env.CI === "true" ? [] : await captureWindows();
   console.log(
     `Demo smoke passed: three clients converged and Observer rehydrated at revision ${reopenedObserver.revision}`,
   );
