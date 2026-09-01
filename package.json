@@ -10,6 +10,7 @@
     "build": "pnpm --recursive build",
     "demo": "pnpm build && electron examples/demo",
     "smoke:electron": "pnpm build && electron tests/electron-smoke/main.mjs",
+    "smoke:demo": "pnpm build && node examples/demo/scripts/run-smoke.mjs",
     "test": "vitest run",
     "typecheck": "pnpm --filter @electron-sync-store/core build && pnpm --recursive typecheck"
   },
