@@ -165,6 +165,52 @@ mutation IDs and patches, but with the new epoch and its current canonical
 revision. This MVP does not claim exactly-once durability across main-process
 restarts.
 
+## React integration
+
+`@electron-sync-store/react` observes an already-hydrated renderer store. No
+Provider or React-specific state container is required:
+
+```tsx
+import {
+  useElectronStore,
+  useElectronSyncState,
+} from "@electron-sync-store/react";
+
+function Counter() {
+  const count = useElectronStore(store, (state) => state.counter);
+  const sync = useElectronSyncState(store);
+
+  return (
+    <>
+      <div>{count}</div>
+      <div>{sync.status}</div>
+      <button
+        onClick={() => {
+          store.setState((state) => ({
+            counter: state.counter + 1,
+          }));
+        }}
+      >
+        Increment
+      </button>
+    </>
+  );
+}
+```
+
+`useElectronStore` selects from visible renderer state, so optimistic updates
+render before IPC settles. It uses `Object.is` selection equality by default;
+an optional equality function can suppress rerenders for object-producing
+selectors. A canonical acknowledgment that changes revision and pending count
+but leaves the selected visible value equal does not rerender that state
+selection.
+
+`useElectronSyncState` observes the full stable synchronization snapshot for
+status, epoch, revision, pending count, and terminal errors. Component unmount
+only removes its subscription—it never destroys the underlying renderer store.
+The React package targets Electron renderer applications and uses React's
+concurrent-safe external-store APIs.
+
 ## Synchronization semantics
 
 Functional updater callbacks will run only in the process calling `setState`.
@@ -175,5 +221,5 @@ value, and the canonical result can reflect only one increment. Same-key
 conflicts use last-commit-wins ordering as assigned by the main process.
 
 The shared protocol and all transport-boundary validators are available from
-`@electron-sync-store/core`. React integration, a polished Electron demo,
-durable persistence, and release hardening remain deferred.
+`@electron-sync-store/core`. A polished Electron demo, durable persistence,
+and release hardening remain deferred.
