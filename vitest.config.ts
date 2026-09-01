@@ -5,6 +5,10 @@ export default defineConfig({
     coverage: {
       include: ["packages/*/src/**/*.ts"],
     },
-    include: ["packages/*/test/**/*.test.ts", "tests/**/*.test.ts"],
+    include: [
+      "packages/*/test/**/*.test.ts",
+      "packages/*/test/**/*.test.tsx",
+      "tests/**/*.test.ts",
+    ],
   },
 });
