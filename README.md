@@ -1,174 +1,102 @@
 # electron-sync-store
 
-`electron-sync-store` is an in-progress TypeScript library for sharing a
-Zustand-like state store between Electron's main process and isolated renderer
-processes.
+Synchronous local state with IPC-backed replication for Electron.
 
-The framework-independent local store lives in `@electron-sync-store/core`:
+`electron-sync-store` gives Electron main and renderer processes one logically
+shared typed store. Main owns canonical state and revision ordering. Every
+renderer keeps a local replica, so hydrated `getState()` calls and optimistic
+`setState()` calls are synchronous and never use synchronous IPC.
 
-```ts
-import { createStore } from "@electron-sync-store/core";
+## Why
 
-const store = createStore({ counter: 0, label: "ready" });
+Electron applications often need shared state in main and several isolated
+renderer processes. Requesting every read over IPC is asynchronous and awkward,
+while exposing `ipcRenderer` or disabling context isolation weakens security.
+This library provides a narrow protocol, local renderer replicas, deterministic
+canonical ordering, and recovery from missed or uncertain messages.
 
-store.setState({ counter: 5 });
-store.setState((state) => ({ counter: state.counter + 1 }));
+## Features
 
-const unsubscribe = store.subscribe((state, previousState) => {
-  console.log(previousState.counter, state.counter);
-});
+- Zustand-like `getState()`, `setState()`, and `subscribe()`
+- Synchronous optimistic renderer writes
+- Canonical main-process state, revisions, and `serverEpoch`
+- Ordered pending-patch rebasing
+- Mutation deduplication and explicit no-op acknowledgments
+- Rejection rollback, revision-gap recovery, epoch recovery, and bounded retry
+- `flush()` synchronization barrier
+- Context-isolated preload bridge with fixed IPC channels
+- React selectors through `useSyncExternalStore`
+- Electron-independent core, canonical-store, and renderer tests
+
+## Installation
+
+Install only the packages your process uses:
+
+```sh
+pnpm add @electron-sync-store/main @electron-sync-store/renderer
+pnpm add @electron-sync-store/react react
 ```
 
-Updates are shallow patches. They are applied synchronously, and subscribers
-are notified synchronously after a real top-level change. A patch is a no-op
-when every supplied property is unchanged according to `Object.is`.
+Electron is a peer dependency of the main and renderer packages. React is a
+peer dependency of the React adapter.
 
-State and patches must contain only IPC-safe serializable values. The core
-validator accepts finite numbers, strings, booleans, `null`, dense arrays, and
-plain objects composed recursively from those values.
+## Quick start
 
-## Canonical main store
-
-The Electron-independent canonical store and named registry live in
-`@electron-sync-store/main`:
+### Main process
 
 ```ts
 import { createElectronSyncMain } from "@electron-sync-store/main";
 
-const sync = createElectronSyncMain();
-const appStore = sync.createStore("app", { counter: 0 });
-sync.installElectron();
+interface AppState {
+  counter: number;
+  profile: { name: string };
+}
 
-appStore.setState((state) => ({ counter: state.counter + 1 }));
+const sync = createElectronSyncMain();
+const store = sync.createStore<AppState>("app", {
+  counter: 0,
+  profile: { name: "Anish" },
+});
+
+const installation = sync.installElectron();
+
+// Main uses the same canonical revision stream.
+store.setState((state) => ({ counter: state.counter + 1 }));
 ```
 
-Each canonical store lifetime has a random `serverEpoch` and revisions starting
-at zero. Real shallow changes consume one revision and emit one `Commit`.
-Canonical no-ops consume no revision, notify no subscribers, and emit no
-commit. Renderer-originated canonical no-ops return `MutationNoop` so a future
-replica can remove its optimistic pending mutation.
+Call `installation.uninstall()` during explicit application teardown if the
+Electron main process remains alive after the synchronization service ends.
 
-Successful renderer outcomes (`Commit` and `MutationNoop`) are deduplicated by
-`mutationId` for the store lifetime. Transient rejections such as
-`stale-server-epoch` are not retained. Resync responses include the current
-snapshot and identify pending mutation IDs already committed or acknowledged
-as no-ops.
-
-## Electron renderer store
-
-Real fixed-channel Electron IPC is available through a narrow preload bridge.
-Context isolation requires exposing that bridge from preload:
+### Preload
 
 ```ts
-// preload.ts
 import { exposeElectronSyncStore } from "@electron-sync-store/renderer/preload";
 
 exposeElectronSyncStore();
 ```
 
-Renderer initialization is asynchronous because it obtains the canonical
-snapshot before returning:
+### Renderer
 
 ```ts
 import { createRendererStore } from "@electron-sync-store/renderer";
 
-const store = await createRendererStore<{ counter: number }>({ id: "app" });
+const store = await createRendererStore<AppState>({ id: "app" });
 
 store.setState({ counter: 5 });
-console.log(store.getState().counter); // 5 immediately.
+console.log(store.getState().counter); // 5 immediately
 
-store.setState((state) => ({ counter: state.counter + 1 }));
+store.setState((state) => ({
+  counter: state.counter + 1,
+}));
 
 await store.flush();
-// This renderer's synchronization work has settled.
-
-store.subscribe((state, previousState) => {
-  console.log(previousState.counter, state.counter);
-});
 ```
 
-The preload exposes only connect, mutation submission, resync, and commit
-observation methods. It never exposes `ipcRenderer` or arbitrary channels.
-The main adapter accepts only the sender's main frame by default and can apply
-an additional `authorizeRenderer` hook.
+Initialization is asynchronous. After it resolves, `getState()`,
+`setState()`, subscriptions, and synchronization metadata reads are local
+memory operations.
 
-Main registers a renderer for commit broadcasts before capturing its snapshot.
-The renderer therefore buffers commits while `connect()` is unresolved,
-discards revisions already represented by the snapshot, applies contiguous
-commits, and requests an initialization resync for gaps or epoch changes.
-Commit delivery remains asynchronous, while hydrated reads and subscriptions
-are entirely local.
-
-Renderer `setState` is synchronous and optimistic. It evaluates functional
-updaters once against the current visible state, validates the resulting
-serializable patch, applies it locally, and then submits only that patch through
-asynchronous IPC. A local visible no-op creates no mutation and performs no IPC.
-
-The renderer keeps distinct confirmed and visible state:
-
-```text
-canonicalState + pending shallow patches in submission order = visibleState
-```
-
-Every canonical commit first updates `canonicalState`. The matching local
-mutation, if present, is then removed, and all remaining pending patches are
-replayed in their original order to rebuild `visibleState`. This preserves
-unrelated optimistic fields and later same-key writes while main remains the
-sole source of canonical revision ordering.
-
-Commit responses and broadcasts use the same reconciliation path, so either
-may arrive first without applying a transition twice. `MutationNoop` removes
-the acknowledged pending mutation without advancing the renderer's canonical
-revision. A definitive `MutationRejection` removes only the rejected mutation
-and rebuilds visible state, while a transport failure retains the uncertain
-mutation and starts snapshot recovery. Only exhausted or unrecoverable work
-moves synchronization status to `error`.
-
-## Recovery and synchronization barriers
-
-A rejected mutation IPC Promise is treated as uncertain, not as a definitive
-mutation rejection. The renderer keeps the optimistic patch and its original
-`mutationId`, requests a snapshot containing every pending mutation ID, and
-uses main's processed-outcome history to reconcile it:
-
-- IDs in `appliedMutationIds` are already represented by the snapshot and are
-  removed from the pending queue.
-- IDs in `noopMutationIds` are removed without applying their patch or
-  incrementing the canonical revision.
-- Unknown IDs remain pending and are retried with the same ID and patch.
-
-Snapshots replace the renderer's canonical state, revision, and `serverEpoch`.
-Remaining pending patches are then replayed in local submission order. Commits
-received during resync are buffered, discarded when already represented by the
-snapshot, and otherwise applied only as a contiguous same-epoch revision
-sequence. Gaps require another snapshot rather than unsafe incremental
-application.
-
-Recovery is bounded and coalesced. A renderer runs one resync at a time, allows
-three mutation submission attempts and three resync attempts by default, holds
-at most 1,000 pending mutations, and buffers at most 256 recovery commits.
-These limits can be adjusted with `maxMutationAttempts`, `maxResyncAttempts`,
-`maxPendingMutations`, and `maxBufferedCommits` when creating the renderer
-store. Exhausted recovery enters `error` and exposes the terminal `Error`
-through `getSyncState()`.
-
-`flush()` resolves when this renderer is synced, has no pending mutations, and
-has no recovery in flight. Multiple callers share the same underlying work.
-It rejects if the store reaches terminal error or is destroyed. It is a store
-synchronization barrier—not a UI rendering barrier, cross-machine durability
-guarantee, or exactly-once persistence guarantee.
-
-If main restarts, its new store lifetime has a new epoch and cannot know the
-previous lifetime's in-memory mutation history. Unresolved renderer patches
-are treated as local intent and retried into the new epoch with the same
-mutation IDs and patches, but with the new epoch and its current canonical
-revision. This MVP does not claim exactly-once durability across main-process
-restarts.
-
-## React integration
-
-`@electron-sync-store/react` observes an already-hydrated renderer store. No
-Provider or React-specific state container is required:
+### React
 
 ```tsx
 import {
@@ -177,88 +105,261 @@ import {
 } from "@electron-sync-store/react";
 
 function Counter() {
-  const count = useElectronStore(store, (state) => state.counter);
+  const counter = useElectronStore(store, (state) => state.counter);
   const sync = useElectronSyncState(store);
 
   return (
-    <>
-      <div>{count}</div>
-      <div>{sync.status}</div>
+    <section>
+      <output>{counter}</output>
+      <small>
+        {sync.status}, revision {sync.revision}, pending {sync.pendingMutations}
+      </small>
       <button
-        onClick={() => {
-          store.setState((state) => ({
-            counter: state.counter + 1,
-          }));
-        }}
+        onClick={() =>
+          store.setState((state) => ({ counter: state.counter + 1 }))
+        }
       >
         Increment
       </button>
-    </>
+    </section>
   );
 }
 ```
 
-`useElectronStore` selects from visible renderer state, so optimistic updates
-render before IPC settles. It uses `Object.is` selection equality by default;
-an optional equality function can suppress rerenders for object-producing
-selectors. A canonical acknowledgment that changes revision and pending count
-but leaves the selected visible value equal does not rerender that state
-selection.
+No Provider is required. `useElectronStore` uses `Object.is` selection
+equality by default and accepts an optional custom equality function.
 
-`useElectronSyncState` observes the full stable synchronization snapshot for
-status, epoch, revision, pending count, and terminal errors. Component unmount
-only removes its subscription—it never destroys the underlying renderer store.
-The React package targets Electron renderer applications and uses React's
-concurrent-safe external-store APIs.
+## Architecture
 
-## Synchronization semantics
+```mermaid
+flowchart TD
+  M["Electron Main<br/>canonical state + serverEpoch + revision"]
+  IPC["Fixed-channel asynchronous Electron IPC"]
+  A["Renderer A<br/>local replica"]
+  B["Renderer B<br/>local replica"]
+  C["Renderer C<br/>local replica"]
 
-Functional updater callbacks will run only in the process calling `setState`.
-Only the resulting shallow patch will cross IPC. Consequently, functional
-renderer updates are not atomic across processes. If two renderers calculate
-`counter + 1` from the same visible value, both can submit the same resulting
-value, and the canonical result can reflect only one increment. Same-key
-conflicts use last-commit-wins ordering as assigned by the main process.
+  M <--> IPC
+  IPC <--> A
+  IPC <--> B
+  IPC <--> C
 
-## Interactive Electron demo
+  A --- LA["getState(): local memory only"]
+  B --- LB["getState(): local memory only"]
+  C --- LC["getState(): local memory only"]
+```
 
-The workspace includes a real Electron + React application built exclusively
-through the packages' public entrypoints:
+Main serializes canonical mutations. Renderer replicas track the canonical
+epoch and revision while preserving their own ordered optimistic patches.
+See [docs/architecture.md](docs/architecture.md) for the state machine and
+protocol boundaries.
+
+## Mutation flow
+
+```mermaid
+flowchart TD
+  S["renderer setState()"] --> V["Update visible state immediately"]
+  S --> Q["Queue serializable shallow patch"]
+  Q --> I["Asynchronous IPC"]
+  I --> M["Electron main applies canonical mutation"]
+  M --> R["Increment revision for a real change"]
+  R --> B["Broadcast Commit"]
+  B --> C["Reconcile every replica"]
+```
+
+Only the resulting patch crosses IPC. A functional updater is evaluated exactly
+once in the calling process and is never serialized.
+
+## Consistency model
+
+1. `getState()` is synchronous and local after renderer initialization.
+2. Renderer `setState()` updates visible local state synchronously.
+3. Cross-process replication is asynchronous.
+4. Main processing order determines canonical mutation order.
+5. Each real canonical change gets a monotonic revision within one
+   `serverEpoch`.
+6. Replicas converge when synchronization settles.
+7. Revision gaps or epoch changes trigger snapshot recovery.
+8. Mutation IDs are idempotent within one canonical store lifetime.
+9. Same-key conflicts use last-canonical-commit-wins ordering.
+10. Renderer functional updaters are not atomic across processes.
+
+The library does not claim shared-memory semantics, linearizability, consensus,
+atomic increments, or exactly-once durability.
+
+## Optimistic updates and rebasing
+
+Each renderer maintains separate confirmed and visible state:
+
+```text
+visibleState = canonicalState + pending local shallow patches in submission order
+```
+
+When a Commit arrives, the renderer:
+
+1. applies its patch to `canonicalState`;
+2. advances the confirmed canonical revision;
+3. removes the acknowledged local mutation, if present;
+4. replays every remaining pending patch in original order;
+5. publishes the rebuilt `visibleState`.
+
+This prevents remote commits from erasing unrelated optimistic writes and keeps
+later same-key local writes visible until they settle.
+
+Canonical no-ops return `MutationNoop`: no revision is consumed and no Commit
+is broadcast, but the submitting renderer can remove its pending mutation.
+Definitive `MutationRejection` results remove and roll back only the rejected
+pending mutation.
+
+## Recovery
+
+A rejected transport Promise is uncertain: main may have applied the mutation
+before the response was lost. The renderer retains the same mutation ID and
+patch, requests a snapshot with every unresolved mutation ID, and reconciles
+main's processed-outcome history.
+
+- `appliedMutationIds`: remove mutations already represented in the snapshot.
+- `noopMutationIds`: remove acknowledged canonical no-ops.
+- Unknown IDs: retry the same mutation ID and patch.
+
+Only one resync runs per renderer. Mutation attempts, resync attempts, pending
+mutations, and buffered recovery commits are bounded and configurable through
+`createRendererStore()`.
+
+A main-process restart creates a new `serverEpoch`. Old and new revisions are
+never compared. Unresolved absolute patches may be replayed into the new epoch
+with their existing mutation IDs, but deduplication history is not durable
+across main lifetimes.
+
+## flush()
+
+```ts
+store.setState({ counter: 5 }); // immediately visible locally
+await store.flush();
+```
+
+`flush()` resolves when that renderer is synced, has no pending mutations, and
+has no recovery in flight. It is a store synchronization barrier, not a UI
+rendering barrier, cross-renderer paint guarantee, persistence guarantee, or
+cross-machine durability boundary.
+
+## Security
+
+- Keep `contextIsolation: true` and `nodeIntegration: false`.
+- Use the provided preload entrypoint; never expose raw `ipcRenderer`.
+- The bridge exposes only connect, mutation, resync, and commit-observation
+  operations on fixed internal channels.
+- Main binds mutation and resync requests to the actual WebContents, store ID,
+  and connected client ID.
+- Only the sender's main frame is accepted by default.
+- Use `authorizeRenderer` when the application needs an origin or store access
+  policy.
+
+The library narrows its own IPC boundary; it cannot secure an otherwise unsafe
+Electron application.
+
+## Serializable values
+
+State and patches support finite JSON-like values:
+
+- strings
+- finite numbers
+- booleans
+- `null`
+- dense arrays
+- plain objects recursively containing supported values
+
+Unsupported values include functions, `undefined`, `BigInt`, `Date`,
+`Map`, `Set`, class instances, cyclic values, `NaN`, and infinities.
+Boundary payloads are validated at runtime.
+
+## Demo
 
 ```sh
 pnpm demo
 ```
 
-It opens three independent renderer processes connected to the same canonical
-`"demo"` store:
+The production-built demo opens three independent renderer replicas:
 
-- **Controller** performs synchronous optimistic counter, profile, status, and
-  shared-theme updates. It can also issue a narrow demo command that calls the
-  canonical main store's `setState()`, reopen closed windows, and use
-  `store.flush()` as an explicit synchronization barrier.
-- **Observer** is a read-only replica. Closing it, changing state, and reopening
-  it demonstrates late hydration from the current canonical snapshot with a
-  new renderer client ID.
-- **Inspector** presents public visible state and synchronization metadata,
-  plus a bounded renderer-local timeline built from `subscribe()` and
-  `subscribeSync()`. It does not claim to expose private or raw commit data.
+- **Controller** performs optimistic writes and main-originated actions.
+- **Observer** is a read-only replica.
+- **Inspector** shows public state, synchronization metadata, and a bounded
+  state/sync event timeline.
 
-Try clicking **+1** or **Burst 10 Updates**, watching Observer converge, changing
-the shared theme, and using **Increment From Main**. Then close Observer, make
-more changes, choose **Reopen Observer**, and verify that the new replica starts
-at the current state and revision. **Wait For Sync** demonstrates that local
-state is visible immediately while `flush()` waits for the renderer's
-synchronization work to settle.
+Try rapid counter changes, profile and shared-theme changes, **Increment From
+Main**, and **Wait For Sync**. Close Observer, mutate state, then use **Reopen
+Observer** to see a new renderer hydrate at the current canonical revision.
 
-The example keeps Electron isolation enabled and exposes only the library's
-narrow preload bridge plus three demo-specific commands. It requires no
-network services at runtime. A deterministic noninteractive launch check is
-also available:
+## API reference
+
+### `@electron-sync-store/core`
+
+- `createStore(initialState)`
+- shallow patch and serializability helpers
+- protocol message types, constants, and runtime validators
+
+### `@electron-sync-store/main`
+
+- `createElectronSyncMain()`
+- `createMainStore()`
+- canonical store and Electron installation types
+
+### `@electron-sync-store/renderer`
+
+- `createRendererStore({ id, ...options })`
+- `createPreloadRendererTransport()`
+- `RendererStore`, `RendererSyncState`, and transport types
+
+### `@electron-sync-store/renderer/preload`
+
+- `exposeElectronSyncStore()`
+
+### `@electron-sync-store/react`
+
+- `useElectronStore(store, selector, equalityFn?)`
+- `useElectronSyncState(store)`
+
+Generated declarations are the authoritative detailed signatures.
+
+## Testing
 
 ```sh
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm smoke:electron
 pnpm smoke:demo
+pnpm test:e2e
+pnpm verify:packages
 ```
 
-The shared protocol and all transport-boundary validators are available from
-`@electron-sync-store/core`. Durable persistence and release hardening remain
-deferred.
+The unit and integration suites run without launching Electron. Smoke and
+Playwright commands exercise real Electron processes.
+
+## Limitations
+
+- Updates are shallow patches; nested objects are replaced, not deep-merged.
+- Values are limited to the serializable set above.
+- Functional renderer updates are not atomic across processes.
+- Deduplication history is in memory for one main-process store lifetime.
+- There is no durable persistence, durable outbox, transaction system, CRDT,
+  cross-machine synchronization, or automatic deep merge.
+- Canonical main state must exist for synchronization.
+- A new main lifetime resets `serverEpoch` and revision numbering.
+
+## Development
+
+Requirements:
+
+- Node.js 22 or newer
+- pnpm 10.15.1
+
+```sh
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes and
+[docs/architecture.md](docs/architecture.md) for technical design details.
