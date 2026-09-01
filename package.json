@@ -14,7 +14,7 @@
     "smoke:demo": "pnpm build && node examples/demo/scripts/run-smoke.mjs",
     "test": "vitest run",
     "test:e2e": "pnpm build && playwright test",
-    "typecheck": "pnpm --filter @electron-sync-store/core build && pnpm --recursive typecheck && tsc --project tsconfig.e2e.json --noEmit",
+    "typecheck": "pnpm --filter=./packages/* build && pnpm --recursive typecheck && tsc --project tsconfig.e2e.json --noEmit",
     "verify:packages": "pnpm build && node scripts/verify-packages.mjs"
   },
   "devDependencies": {
