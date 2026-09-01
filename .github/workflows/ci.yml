@@ -28,6 +28,8 @@ jobs:
   electron:
     runs-on: ubuntu-latest
     needs: quality
+    env:
+      ELECTRON_DISABLE_SANDBOX: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
