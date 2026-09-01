@@ -2,14 +2,23 @@ import {
   PROTOCOL_VERSION,
   applyShallowPatch,
   assertCommit,
+  assertMutationResult,
   assertResyncResult,
+  assertSerializableRecord,
   assertSnapshot,
   hasShallowChanges,
   type Commit,
   type ConnectRequest,
+  type MutationNoop,
+  type MutationRejection,
+  type MutationRequest,
+  type MutationResult,
   type ResyncRequest,
+  type SetStateAction,
   type Snapshot,
   type StateListener,
+  type StatePatch,
+  type StateUpdater,
   type Unsubscribe,
 } from "@electron-sync-store/core";
 
@@ -29,7 +38,7 @@ export interface RendererSyncState {
   readonly clientId: string;
   readonly serverEpoch: string | null;
   readonly revision: number | null;
-  readonly pendingMutations: 0;
+  readonly pendingMutations: number;
   readonly status: RendererSyncStatus;
   readonly error: Error | null;
 }
@@ -41,6 +50,8 @@ export type RendererSyncListener = (
 
 export interface RendererStore<State extends object> {
   getState(): Readonly<State>;
+  setState(patch: StatePatch<State>): void;
+  setState(updater: StateUpdater<State>): void;
   subscribe(listener: StateListener<State>): Unsubscribe;
   getSyncState(): Readonly<RendererSyncState>;
   subscribeSync(listener: RendererSyncListener): Unsubscribe;
@@ -53,15 +64,26 @@ export interface CreateRendererStoreOptions<State extends object> {
   signal?: AbortSignal;
 }
 
+interface PendingMutation<State extends object> {
+  readonly mutationId: string;
+  readonly patch: StatePatch<State>;
+  readonly baseRevision: number;
+}
+
+interface SyncTransition {
+  readonly previousState: RendererSyncState;
+  readonly changed: boolean;
+}
+
 function createAbortError(): Error {
   const error = new Error("Renderer store initialization was aborted");
   error.name = "AbortError";
   return error;
 }
 
-function createClientId(): string {
+function createUuid(label: string): string {
   if (globalThis.crypto?.randomUUID === undefined) {
-    throw new Error("crypto.randomUUID() is required to create a renderer store");
+    throw new Error(`crypto.randomUUID() is required to create ${label}`);
   }
   return globalThis.crypto.randomUUID();
 }
@@ -75,11 +97,14 @@ export async function createRendererStore<State extends object>(
 
   const transport =
     options.transport ?? createPreloadRendererTransport<State>();
-  const clientId = createClientId();
+  const clientId = createUuid("a renderer store");
   const stateListeners = new Set<StateListener<State>>();
   const syncListeners = new Set<RendererSyncListener>();
   const bufferedCommits: Commit<State>[] = [];
+  const pendingMutations: PendingMutation<State>[] = [];
+  const submissionQueue: MutationRequest<State>[] = [];
   let canonicalState: State | undefined;
+  let visibleState: State | undefined;
   let syncState: RendererSyncState = {
     clientId,
     serverEpoch: null,
@@ -88,6 +113,8 @@ export async function createRendererStore<State extends object>(
     status: "connecting",
     error: null,
   };
+  let localSetDepth = 0;
+  let drainingSubmissions = false;
   let initializing = true;
   let destroyed = false;
   let initializationError: Error | undefined;
@@ -98,22 +125,41 @@ export async function createRendererStore<State extends object>(
     }
   }
 
-  function updateSyncState(
-    update: Partial<Omit<RendererSyncState, "clientId" | "pendingMutations">>,
-  ): void {
+  function replaceSyncState(
+    update: Partial<Omit<RendererSyncState, "clientId">>,
+  ): SyncTransition {
+    const previousState = syncState;
     const nextState: RendererSyncState = { ...syncState, ...update };
-    if (
-      nextState.serverEpoch === syncState.serverEpoch &&
-      nextState.revision === syncState.revision &&
-      nextState.status === syncState.status &&
-      nextState.error === syncState.error
-    ) {
+    const changed =
+      nextState.serverEpoch !== previousState.serverEpoch ||
+      nextState.revision !== previousState.revision ||
+      nextState.pendingMutations !== previousState.pendingMutations ||
+      nextState.status !== previousState.status ||
+      nextState.error !== previousState.error;
+    if (changed) {
+      syncState = nextState;
+    }
+    return { previousState, changed };
+  }
+
+  function notifySync(transition: SyncTransition): void {
+    if (!transition.changed) {
       return;
     }
-    const previousState = syncState;
-    syncState = nextState;
     for (const listener of [...syncListeners]) {
-      listener(syncState, previousState);
+      listener(syncState, transition.previousState);
+    }
+  }
+
+  function updateSyncState(
+    update: Partial<Omit<RendererSyncState, "clientId">>,
+  ): void {
+    notifySync(replaceSyncState(update));
+  }
+
+  function notifyState(nextState: State, previousState: State): void {
+    for (const listener of [...stateListeners]) {
+      listener(nextState, previousState);
     }
   }
 
@@ -139,28 +185,57 @@ export async function createRendererStore<State extends object>(
 
   function establishSnapshot(snapshot: Snapshot<State>): void {
     canonicalState = { ...snapshot.state } as State;
+    visibleState = canonicalState;
     updateSyncState({
       serverEpoch: snapshot.serverEpoch,
       revision: snapshot.revision,
+      pendingMutations: pendingMutations.length,
       error: null,
     });
   }
 
-  function applyCommit(commit: Commit<State>): void {
-    if (canonicalState === undefined || syncState.revision === null) {
-      throw new Error("Cannot apply a commit before renderer hydration");
+  function rebuildVisibleState(): State {
+    if (canonicalState === undefined) {
+      throw new Error("Cannot rebuild visible state before renderer hydration");
     }
 
-    const previousState = canonicalState;
-    const stateChanged = hasShallowChanges<State>(canonicalState, commit.patch);
-    if (stateChanged) {
-      canonicalState = applyShallowPatch<State>(canonicalState, commit.patch);
+    let nextState = canonicalState;
+    for (const pendingMutation of pendingMutations) {
+      nextState = applyShallowPatch(nextState, pendingMutation.patch);
     }
-    updateSyncState({ revision: commit.revision });
+    return nextState;
+  }
+
+  function removePendingMutation(mutationId: string): boolean {
+    const index = pendingMutations.findIndex(
+      (pendingMutation) => pendingMutation.mutationId === mutationId,
+    );
+    if (index === -1) {
+      return false;
+    }
+    pendingMutations.splice(index, 1);
+    return true;
+  }
+
+  function finishReconciliation(
+    previousVisibleState: State,
+    syncUpdate: Partial<Omit<RendererSyncState, "clientId">>,
+  ): void {
+    const rebuiltState = rebuildVisibleState();
+    const stateChanged = hasShallowChanges(previousVisibleState, rebuiltState);
     if (stateChanged) {
-      for (const listener of [...stateListeners]) {
-        listener(canonicalState, previousState);
-      }
+      visibleState = rebuiltState;
+    }
+    const syncTransition = replaceSyncState({
+      ...syncUpdate,
+      pendingMutations: pendingMutations.length,
+    });
+
+    // Both state replicas and synchronization metadata are complete before
+    // either user callback observes the transition.
+    notifySync(syncTransition);
+    if (stateChanged) {
+      notifyState(visibleState as State, previousVisibleState);
     }
   }
 
@@ -174,7 +249,10 @@ export async function createRendererStore<State extends object>(
     return message;
   }
 
-  function handleLiveCommit(commit: Commit<State>): void {
+  function processCanonicalCommit(commit: Commit<State>): void {
+    if (canonicalState === undefined || visibleState === undefined) {
+      throw new Error("Cannot apply a commit before renderer hydration");
+    }
     if (syncState.serverEpoch !== commit.serverEpoch) {
       transitionToError(new Error("Commit server epoch does not match renderer epoch"));
       return;
@@ -183,7 +261,11 @@ export async function createRendererStore<State extends object>(
       transitionToError(new Error("Renderer canonical revision is unavailable"));
       return;
     }
+
     if (commit.revision <= syncState.revision) {
+      if (removePendingMutation(commit.mutationId)) {
+        finishReconciliation(visibleState, {});
+      }
       return;
     }
     if (commit.revision !== syncState.revision + 1) {
@@ -194,7 +276,137 @@ export async function createRendererStore<State extends object>(
       );
       return;
     }
-    applyCommit(commit);
+
+    const previousVisibleState = visibleState;
+    canonicalState = applyShallowPatch(canonicalState, commit.patch);
+    removePendingMutation(commit.mutationId);
+    finishReconciliation(previousVisibleState, { revision: commit.revision });
+  }
+
+  function assertResultIdentity(
+    result: MutationNoop | MutationRejection,
+    mutationId: string,
+  ): void {
+    if (result.storeId !== options.id) {
+      throw new Error(
+        `Mutation result store ID "${result.storeId}" does not match "${options.id}"`,
+      );
+    }
+    if (result.clientId !== clientId) {
+      throw new Error("Mutation result client ID does not match renderer client ID");
+    }
+    if (result.mutationId !== mutationId) {
+      throw new Error("Mutation result ID does not match the submitted mutation");
+    }
+  }
+
+  function processNoop(result: MutationNoop, mutationId: string): void {
+    assertResultIdentity(result, mutationId);
+    if (result.serverEpoch !== syncState.serverEpoch) {
+      throw new Error("Mutation no-op server epoch does not match renderer epoch");
+    }
+    if (visibleState === undefined || !removePendingMutation(mutationId)) {
+      return;
+    }
+    finishReconciliation(visibleState, {});
+  }
+
+  function processRejection(
+    result: MutationRejection,
+    mutationId: string,
+  ): void {
+    assertResultIdentity(result, mutationId);
+    if (
+      result.code !== "stale-server-epoch" &&
+      result.serverEpoch !== null &&
+      result.serverEpoch !== syncState.serverEpoch
+    ) {
+      throw new Error("Mutation rejection server epoch does not match renderer epoch");
+    }
+    if (visibleState !== undefined && removePendingMutation(mutationId)) {
+      finishReconciliation(visibleState, {});
+    }
+    if (result.code === "stale-server-epoch") {
+      transitionToError(
+        new Error(`Mutation rejected because the server epoch is stale: ${result.message}`),
+      );
+    }
+  }
+
+  function processMutationResult(
+    result: unknown,
+    mutationId: string,
+  ): void {
+    if (destroyed) {
+      return;
+    }
+    assertMutationResult<State>(result);
+    switch (result.type) {
+      case "commit":
+        if (result.mutationId !== mutationId) {
+          throw new Error("Commit mutation ID does not match the submitted mutation");
+        }
+        processCanonicalCommit(validateCommit(result));
+        break;
+      case "noop":
+        processNoop(result, mutationId);
+        break;
+      case "rejected":
+        processRejection(result, mutationId);
+        break;
+    }
+  }
+
+  function handleMutationFailure(error: unknown, mutationId: string): void {
+    if (
+      destroyed ||
+      !pendingMutations.some(
+        (pendingMutation) => pendingMutation.mutationId === mutationId,
+      )
+    ) {
+      return;
+    }
+    transitionToError(
+      toError(error, `Mutation "${mutationId}" transport request failed`),
+    );
+  }
+
+  function submit(request: MutationRequest<State>): void {
+    try {
+      void transport.mutate(request).then(
+        (result) => {
+          try {
+            processMutationResult(result, request.mutationId);
+          } catch (error) {
+            if (!destroyed) {
+              transitionToError(error);
+            }
+          }
+        },
+        (error) => {
+          handleMutationFailure(error, request.mutationId);
+        },
+      );
+    } catch (error) {
+      handleMutationFailure(error, request.mutationId);
+    }
+  }
+
+  function drainSubmissionQueue(): void {
+    if (drainingSubmissions || localSetDepth !== 0 || destroyed) {
+      return;
+    }
+    drainingSubmissions = true;
+    try {
+      while (submissionQueue.length > 0 && !destroyed) {
+        const request = submissionQueue.shift();
+        if (request !== undefined) {
+          submit(request);
+        }
+      }
+    } finally {
+      drainingSubmissions = false;
+    }
   }
 
   function receiveCommit(message: unknown): void {
@@ -206,7 +418,7 @@ export async function createRendererStore<State extends object>(
       if (initializing) {
         bufferedCommits.push(commit);
       } else {
-        handleLiveCommit(commit);
+        processCanonicalCommit(commit);
       }
     } catch (error) {
       if (initializing) {
@@ -233,7 +445,7 @@ export async function createRendererStore<State extends object>(
       if (commit.revision !== syncState.revision + 1) {
         return true;
       }
-      applyCommit(commit);
+      processCanonicalCommit(commit);
     }
     return false;
   }
@@ -279,10 +491,70 @@ export async function createRendererStore<State extends object>(
 
   function getState(): Readonly<State> {
     assertActive("get state");
-    if (canonicalState === undefined) {
+    if (visibleState === undefined) {
       throw new Error(`Renderer store "${options.id}" is not hydrated`);
     }
-    return canonicalState;
+    return visibleState;
+  }
+
+  function setState(patch: StatePatch<State>): void;
+  function setState(updater: StateUpdater<State>): void;
+  function setState(action: SetStateAction<State>): void {
+    assertActive("set state");
+    if (syncState.status !== "synced") {
+      throw new Error(
+        `Cannot set state while renderer store "${options.id}" is ${syncState.status}`,
+      );
+    }
+    if (
+      visibleState === undefined ||
+      syncState.serverEpoch === null ||
+      syncState.revision === null
+    ) {
+      throw new Error(`Renderer store "${options.id}" is not hydrated`);
+    }
+
+    const candidatePatch =
+      typeof action === "function" ? action(visibleState) : action;
+    assertSerializableRecord(candidatePatch, "renderer state patch");
+    const patch = { ...candidatePatch } as StatePatch<State>;
+    if (!hasShallowChanges(visibleState, patch)) {
+      return;
+    }
+
+    const mutationId = createUuid("a renderer mutation");
+    const baseRevision = syncState.revision;
+    const pendingMutation: PendingMutation<State> = {
+      mutationId,
+      patch,
+      baseRevision,
+    };
+    const request: MutationRequest<State> = {
+      protocolVersion: PROTOCOL_VERSION,
+      storeId: options.id,
+      serverEpoch: syncState.serverEpoch,
+      clientId,
+      mutationId,
+      baseRevision,
+      patch,
+    };
+
+    const previousVisibleState = visibleState;
+    pendingMutations.push(pendingMutation);
+    submissionQueue.push(request);
+    visibleState = applyShallowPatch(visibleState, patch);
+    const syncTransition = replaceSyncState({
+      pendingMutations: pendingMutations.length,
+    });
+
+    localSetDepth += 1;
+    try {
+      notifySync(syncTransition);
+      notifyState(visibleState, previousVisibleState);
+    } finally {
+      localSetDepth -= 1;
+      drainSubmissionQueue();
+    }
   }
 
   function subscribe(listener: StateListener<State>): Unsubscribe {
@@ -312,15 +584,22 @@ export async function createRendererStore<State extends object>(
     destroyed = true;
     initializing = false;
     bufferedCommits.length = 0;
+    pendingMutations.length = 0;
+    submissionQueue.length = 0;
     options.signal?.removeEventListener("abort", destroy);
     transport.disconnect();
-    updateSyncState({ status: "destroyed", error: null });
+    updateSyncState({
+      pendingMutations: 0,
+      status: "destroyed",
+      error: null,
+    });
     stateListeners.clear();
     syncListeners.clear();
   }
 
   const store: RendererStore<State> = {
     getState,
+    setState,
     subscribe,
     getSyncState,
     subscribeSync,
