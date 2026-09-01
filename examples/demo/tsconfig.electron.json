@@ -7,5 +7,5 @@
     "tsBuildInfoFile": "dist/electron.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"]
 }

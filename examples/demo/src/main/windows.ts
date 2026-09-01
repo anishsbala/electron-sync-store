@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { DemoWindowRole } from "../shared/demo-bridge.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-const preloadPath = join(moduleDirectory, "../preload/index.js");
+const preloadPath = join(moduleDirectory, "../preload/index.cjs");
 const rendererPath = join(moduleDirectory, "../../renderer/index.html");
 
 const windowSpecifications: Record<
@@ -70,7 +70,7 @@ export function createDemoWindowManager(): DemoWindowManager {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         preload: preloadPath,
       },
     });

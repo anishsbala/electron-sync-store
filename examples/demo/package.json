@@ -1,12 +1,14 @@
 {
   "name": "@electron-sync-store/demo",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/electron/main/index.js",
   "scripts": {
     "build": "pnpm build:electron && pnpm build:renderer",
-    "build:electron": "tsc --project tsconfig.electron.json",
+    "build:electron": "pnpm build:main && pnpm build:preload",
+    "build:main": "tsc --project tsconfig.electron.json",
+    "build:preload": "vite build --config vite.preload.config.ts",
     "build:renderer": "vite build",
     "dev": "pnpm build && electron .",
     "typecheck": "tsc --project tsconfig.json --noEmit"
@@ -28,6 +30,7 @@
     "vite": "^8.2.2"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=22"
+  },
+  "license": "MIT"
 }
