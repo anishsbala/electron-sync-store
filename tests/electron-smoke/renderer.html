@@ -16,7 +16,7 @@
       import { createRendererStore } from "../../packages/renderer/dist/index.js";
 
       let store;
-      let commitPromise;
+      let synchronizationPromise;
 
       window.startElectronSyncStoreSmoke = async () => {
         store = await createRendererStore({ id: "app" });
@@ -26,17 +26,38 @@
         };
       };
 
-      window.armElectronSyncStoreCommitWait = () => {
-        commitPromise = new Promise((resolve) => {
-          const unsubscribe = store.subscribe((state) => {
-            unsubscribe();
-            resolve({ state, sync: store.getSyncState() });
-          });
+      window.armElectronSyncStoreCommitWait = (revision, counter) => {
+        synchronizationPromise = new Promise((resolve) => {
+          const finishIfReady = () => {
+            const sync = store.getSyncState();
+            const state = store.getState();
+            if (
+              sync.status === "synced" &&
+              sync.revision === revision &&
+              sync.pendingMutations === 0 &&
+              state.counter === counter
+            ) {
+              unsubscribeState();
+              unsubscribeSync();
+              resolve({ state, sync });
+            }
+          };
+          const unsubscribeState = store.subscribe(finishIfReady);
+          const unsubscribeSync = store.subscribeSync(finishIfReady);
+          queueMicrotask(finishIfReady);
         });
         return true;
       };
 
-      window.waitForElectronSyncStoreCommit = () => commitPromise;
+      window.performElectronSyncStoreMutation = (counter) => {
+        store.setState({ counter });
+        return {
+          state: store.getState(),
+          sync: store.getSyncState(),
+        };
+      };
+
+      window.waitForElectronSyncStoreCommit = () => synchronizationPromise;
     </script>
   </body>
 </html>
