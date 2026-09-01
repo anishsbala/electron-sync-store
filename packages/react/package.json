@@ -49,6 +49,14 @@
     "use-sync-external-store"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anishsbala/electron-sync-store.git"
+  },
+  "homepage": "https://github.com/anishsbala/electron-sync-store#readme",
+  "bugs": {
+    "url": "https://github.com/anishsbala/electron-sync-store/issues"
+  },
   "publishConfig": {
     "access": "public"
   }

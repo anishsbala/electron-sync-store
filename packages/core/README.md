@@ -10,5 +10,5 @@ const store = createStore({ counter: 0 });
 store.setState((state) => ({ counter: state.counter + 1 }));
 ```
 
-See the repository root documentation for the complete Electron architecture
-and consistency model.
+See the [repository documentation](https://github.com/anishsbala/electron-sync-store#readme)
+for the complete Electron architecture and consistency model.

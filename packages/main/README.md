@@ -11,5 +11,6 @@ const store = sync.createStore("app", { counter: 0 });
 sync.installElectron();
 ```
 
-Electron is a peer dependency. See the repository root documentation for
-security, lifecycle, and protocol details.
+Electron is a peer dependency. See the
+[repository documentation](https://github.com/anishsbala/electron-sync-store#readme)
+for security, lifecycle, and protocol details.

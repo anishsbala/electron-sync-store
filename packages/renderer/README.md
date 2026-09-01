@@ -13,3 +13,5 @@ await store.flush();
 
 Expose the bridge from preload with
 `@electron-sync-store/renderer/preload`. Electron is a peer dependency.
+
+[Full documentation](https://github.com/anishsbala/electron-sync-store#readme)
