@@ -50,17 +50,17 @@ export function Inspector({ store }: { store: RendererStore<DemoState> }) {
     <div className="window-content inspector-layout">
       <Panel title="Replica">
         <dl className="replica-grid mono">
-          <div><dt>Client ID</dt><dd title={sync.clientId}>{shortenIdentifier(sync.clientId)}</dd></div>
+          <div><dt>Client ID</dt><dd data-testid="inspector-client" data-client-id={sync.clientId} title={sync.clientId}>{shortenIdentifier(sync.clientId)}</dd></div>
           <div><dt>Server epoch</dt><dd title={sync.serverEpoch ?? undefined}>{shortenIdentifier(sync.serverEpoch)}</dd></div>
-          <div><dt>Canonical revision</dt><dd>{sync.revision ?? "—"}</dd></div>
-          <div><dt>Pending mutations</dt><dd>{sync.pendingMutations}</dd></div>
-          <div><dt>Status</dt><dd className={`text-${sync.status}`}>{sync.status}</dd></div>
+          <div><dt>Canonical revision</dt><dd data-testid="inspector-revision">{sync.revision ?? "—"}</dd></div>
+          <div><dt>Pending mutations</dt><dd data-testid="inspector-pending">{sync.pendingMutations}</dd></div>
+          <div><dt>Status</dt><dd data-testid="inspector-status" className={`text-${sync.status}`}>{sync.status}</dd></div>
           <div><dt>Error</dt><dd>{sync.error?.message ?? "none"}</dd></div>
         </dl>
       </Panel>
 
       <Panel title="Visible State">
-        <StateJson state={state} />
+        <StateJson state={state} testId="inspector-state" />
       </Panel>
 
       <Panel

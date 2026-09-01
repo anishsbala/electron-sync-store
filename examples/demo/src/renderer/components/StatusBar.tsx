@@ -18,19 +18,23 @@ export function StatusBar({
     <header className="status-bar">
       <div className="role-block">
         <span className="eyebrow">WINDOW ROLE</span>
-        <strong>{role.toUpperCase()}</strong>
+        <strong data-testid="window-role">{role.toUpperCase()}</strong>
       </div>
       <div className="status-metrics">
-        <span className={`status-chip status-${sync.status}`}>
+        <span className={`status-chip status-${sync.status}`} data-testid="sync-status">
           <span className="status-dot" />
           {sync.status}
         </span>
-        <span><b>Rev</b> {sync.revision ?? "—"}</span>
-        <span><b>Pending</b> {sync.pendingMutations}</span>
+        <span data-testid="sync-revision"><b>Rev</b> {sync.revision ?? "—"}</span>
+        <span data-testid="sync-pending"><b>Pending</b> {sync.pendingMutations}</span>
       </div>
       <div className="identity-metrics mono">
-        <span>client {shortenIdentifier(sync.clientId)}</span>
-        <span>epoch {shortenIdentifier(sync.serverEpoch)}</span>
+        <span data-testid="sync-client" data-client-id={sync.clientId}>
+          client {shortenIdentifier(sync.clientId)}
+        </span>
+        <span data-testid="sync-epoch" data-server-epoch={sync.serverEpoch ?? ""}>
+          epoch {shortenIdentifier(sync.serverEpoch)}
+        </span>
       </div>
     </header>
   );

@@ -17,19 +17,19 @@ export function Observer({ store }: { store: RendererStore<DemoState> }) {
   return (
     <div className="window-content observer-layout">
       <Panel title="Shared State" action={<span className="read-only-chip">READ ONLY</span>}>
-        <div className="observer-counter mono">{state.counter}</div>
+        <div className="observer-counter mono" data-testid="observer-counter">{state.counter}</div>
         <span className="metric-label centered">COUNTER</span>
       </Panel>
 
       <div className="summary-grid">
         <Panel title="Profile">
-          <strong className="summary-value">{state.profile.name}</strong>
-          <span className={`presence presence-${state.profile.status}`}>
+          <strong className="summary-value" data-testid="observer-name">{state.profile.name}</strong>
+          <span className={`presence presence-${state.profile.status}`} data-testid="observer-status">
             <span /> {state.profile.status}
           </span>
         </Panel>
         <Panel title="Theme">
-          <strong className="summary-value capitalize">{state.theme}</strong>
+          <strong className="summary-value capitalize" data-testid="observer-theme">{state.theme}</strong>
           <span className="muted">Shared across all windows</span>
         </Panel>
         <Panel title="Last Updated By">

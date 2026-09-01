@@ -55,16 +55,16 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
   return (
     <div className="window-content controller-layout">
       <Panel title="Shared Counter" className="counter-panel">
-        <div className="counter-value mono">{state.counter}</div>
+        <div className="counter-value mono" data-testid="controller-counter">{state.counter}</div>
         <div className="button-row counter-controls">
           <button onClick={() => updateCounter(-1)}>−1</button>
-          <button className="primary" onClick={() => updateCounter(1)}>+1</button>
+          <button className="primary" data-testid="increment-one" onClick={() => updateCounter(1)}>+1</button>
           <button onClick={() => updateCounter(10)}>+10</button>
           <button onClick={() => store.setState({ counter: 0, lastUpdatedBy: "controller" })}>
             Reset
           </button>
         </div>
-        <button className="wide-button secondary" onClick={runRapidUpdates}>
+        <button className="wide-button secondary" data-testid="burst-updates" onClick={runRapidUpdates}>
           Burst 10 Updates
         </button>
         <p className="hint">Visible state updates locally before canonical settlement.</p>
@@ -76,6 +76,7 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
           <div className="inline-control">
             <input
               id="profile-name"
+              data-testid="profile-name"
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -88,6 +89,7 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
               }}
             />
             <button
+              data-testid="apply-profile-name"
               onClick={() =>
                 store.setState((current) => ({
                   profile: { ...current.profile, name: nameDraft.trim() || current.profile.name },
@@ -101,6 +103,7 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
           <label htmlFor="profile-status">Status</label>
           <select
             id="profile-status"
+            data-testid="profile-status"
             value={state.profile.status}
             onChange={(event) =>
               store.setState((current) => ({
@@ -126,6 +129,7 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
               key={theme}
               className={state.theme === theme ? "selected" : ""}
               aria-pressed={state.theme === theme}
+              data-testid={`theme-${theme}`}
               onClick={() => store.setState({ theme, lastUpdatedBy: "controller" })}
             >
               {theme === "dark" ? "Dark" : "Light"}
@@ -137,17 +141,19 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
       <Panel title="Process & Lifecycle Actions">
         <div className="action-grid">
           <button
+            data-testid="increment-from-main"
             onClick={() => void runDemoAction(() => window.demoActions.incrementFromMain())}
           >
             Increment From Main
           </button>
           <button
+            data-testid="wait-for-sync"
             disabled={flushLabel === "Synchronizing…"}
             onClick={() => void waitForSync()}
           >
             {flushLabel}
           </button>
-          <button onClick={() => void runDemoAction(() => window.demoActions.reopenObserver())}>
+          <button data-testid="reopen-observer" onClick={() => void runDemoAction(() => window.demoActions.reopenObserver())}>
             Reopen Observer
           </button>
           <button onClick={() => void runDemoAction(() => window.demoActions.reopenInspector())}>
@@ -161,7 +167,7 @@ export function Controller({ store }: { store: RendererStore<DemoState> }) {
         title="Visible Renderer State"
         action={<span className="panel-meta mono">rev {sync.revision} · pending {sync.pendingMutations}</span>}
       >
-        <StateJson state={state} />
+        <StateJson state={state} testId="controller-state" />
       </Panel>
     </div>
   );

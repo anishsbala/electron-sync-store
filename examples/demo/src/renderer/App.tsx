@@ -19,7 +19,7 @@ export function App({
   const theme = useElectronStore(store, (state) => state.theme);
 
   return (
-    <main className="app-shell" data-theme={theme}>
+    <main className="app-shell" data-theme={theme} data-testid={`${role}-root`}>
       <StatusBar role={role} store={store} />
       <SyncError store={store} />
       {role === "controller" && <Controller store={store} />}

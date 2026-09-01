@@ -1,10 +1,11 @@
 {
   "name": "electron-sync-store-monorepo",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.15.1",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "pnpm --recursive build",
@@ -12,11 +13,15 @@
     "smoke:electron": "pnpm build && electron tests/electron-smoke/main.mjs",
     "smoke:demo": "pnpm build && node examples/demo/scripts/run-smoke.mjs",
     "test": "vitest run",
-    "typecheck": "pnpm --filter @electron-sync-store/core build && pnpm --recursive typecheck"
+    "test:e2e": "pnpm build && playwright test",
+    "typecheck": "pnpm --filter @electron-sync-store/core build && pnpm --recursive typecheck && tsc --project tsconfig.e2e.json --noEmit",
+    "verify:packages": "pnpm build && node scripts/verify-packages.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.3.0",
     "electron": "^44.1.0",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
@@ -24,5 +29,6 @@
     "onlyBuiltDependencies": [
       "electron"
     ]
-  }
+  },
+  "license": "MIT"
 }
