@@ -54,10 +54,10 @@ Successful renderer outcomes (`Commit` and `MutationNoop`) are deduplicated by
 snapshot and identify pending mutation IDs already committed or acknowledged
 as no-ops.
 
-## Electron renderer bootstrap
+## Electron renderer store
 
-Phase 3 provides real fixed-channel Electron IPC. Context isolation requires
-the narrow preload bridge:
+Real fixed-channel Electron IPC is available through a narrow preload bridge.
+Context isolation requires exposing that bridge from preload:
 
 ```ts
 // preload.ts
@@ -74,7 +74,10 @@ import { createRendererStore } from "@electron-sync-store/renderer";
 
 const store = await createRendererStore<{ counter: number }>({ id: "app" });
 
-store.getState(); // Synchronous local-memory read after hydration.
+store.setState({ counter: 5 });
+console.log(store.getState().counter); // 5 immediately.
+
+store.setState((state) => ({ counter: state.counter + 1 }));
 store.subscribe((state, previousState) => {
   console.log(previousState.counter, state.counter);
 });
@@ -92,8 +95,29 @@ commits, and requests an initialization resync for gaps or epoch changes.
 Commit delivery remains asynchronous, while hydrated reads and subscriptions
 are entirely local.
 
-Renderer `setState` is intentionally absent in Phase 3. Optimistic patches and
-pending-mutation reconciliation are reserved for Phase 4.
+Renderer `setState` is synchronous and optimistic. It evaluates functional
+updaters once against the current visible state, validates the resulting
+serializable patch, applies it locally, and then submits only that patch through
+asynchronous IPC. A local visible no-op creates no mutation and performs no IPC.
+
+The renderer keeps distinct confirmed and visible state:
+
+```text
+canonicalState + pending shallow patches in submission order = visibleState
+```
+
+Every canonical commit first updates `canonicalState`. The matching local
+mutation, if present, is then removed, and all remaining pending patches are
+replayed in their original order to rebuild `visibleState`. This preserves
+unrelated optimistic fields and later same-key writes while main remains the
+sole source of canonical revision ordering.
+
+Commit responses and broadcasts use the same reconciliation path, so either
+may arrive first without applying a transition twice. `MutationNoop` removes
+the acknowledged pending mutation without advancing the renderer's canonical
+revision. A definitive `MutationRejection` removes only the rejected mutation
+and rebuilds visible state, while a transport failure retains the uncertain
+mutation and moves synchronization status to `error` for later recovery.
 
 ## Synchronization semantics
 
@@ -105,5 +129,6 @@ value, and the canonical result can reflect only one increment. Same-key
 conflicts use last-commit-wins ordering as assigned by the main process.
 
 The shared protocol and all transport-boundary validators are available from
-`@electron-sync-store/core`. Optimistic renderer mutations, full ongoing gap
-recovery, retry/flush behavior, and React integration remain deferred.
+`@electron-sync-store/core`. Full pending-aware gap/epoch recovery, same-ID
+retry, `flush()`, bounded pending queues, and React integration remain
+deferred.
