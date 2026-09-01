@@ -10,6 +10,12 @@ import type {
 
 import type { RendererTransport } from "../src/index.js";
 
+interface DeferredMutation<State extends object> {
+  readonly request: MutationRequest<State>;
+  readonly resolve: (result: MutationResult<State>) => void;
+  readonly reject: (error: unknown) => void;
+}
+
 export class FakeRendererTransport<State extends object>
   implements RendererTransport<State>
 {
@@ -23,6 +29,7 @@ export class FakeRendererTransport<State extends object>
   private commitListener: ((message: unknown) => void) | undefined;
   private resolveConnection: ((snapshot: Snapshot<State>) => void) | undefined;
   private rejectConnection: ((error: unknown) => void) | undefined;
+  private readonly deferredMutations: DeferredMutation<State>[] = [];
 
   connect(
     request: ConnectRequest,
@@ -57,12 +64,42 @@ export class FakeRendererTransport<State extends object>
     this.commitListener(message);
   }
 
-  async mutate(request: MutationRequest<State>): Promise<MutationResult<State>> {
+  mutate(request: MutationRequest<State>): Promise<MutationResult<State>> {
     this.mutationRequests.push(request);
-    if (this.mutationResult === undefined) {
-      throw new Error("No fake mutation result configured");
+    if (this.mutationResult !== undefined) {
+      return Promise.resolve(this.mutationResult);
     }
-    return this.mutationResult;
+    return new Promise<MutationResult<State>>((resolve, reject) => {
+      this.deferredMutations.push({ request, resolve, reject });
+    });
+  }
+
+  resolveMutation(
+    mutationId: string,
+    result: MutationResult<State>,
+  ): void {
+    const deferred = this.takeDeferredMutation(mutationId);
+    deferred.resolve(result);
+  }
+
+  rejectMutation(mutationId: string, error: unknown): void {
+    const deferred = this.takeDeferredMutation(mutationId);
+    deferred.reject(error);
+  }
+
+  get pendingMutationCount(): number {
+    return this.deferredMutations.length;
+  }
+
+  private takeDeferredMutation(mutationId: string): DeferredMutation<State> {
+    const index = this.deferredMutations.findIndex(
+      (deferred) => deferred.request.mutationId === mutationId,
+    );
+    if (index === -1) {
+      throw new Error(`No pending fake mutation "${mutationId}"`);
+    }
+    const [deferred] = this.deferredMutations.splice(index, 1);
+    return deferred as DeferredMutation<State>;
   }
 
   async resync(request: ResyncRequest): Promise<ResyncResult<State>> {
