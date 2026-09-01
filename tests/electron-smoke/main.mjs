@@ -45,14 +45,9 @@ async function runSmokeTest() {
       throw new Error(`Unexpected initial snapshots: ${JSON.stringify(snapshots)}`);
     }
 
-    await Promise.all([
-      firstWindow.webContents.executeJavaScript(
-        "window.armElectronSyncStoreCommitWait(1, 1)",
-      ),
-      secondWindow.webContents.executeJavaScript(
-        "window.armElectronSyncStoreCommitWait(1, 1)",
-      ),
-    ]);
+    await secondWindow.webContents.executeJavaScript(
+      "window.armElectronSyncStoreCommitWait(1, 1)",
+    );
     const optimistic = await firstWindow.webContents.executeJavaScript(
       "window.performElectronSyncStoreMutation(1)",
     );
@@ -65,7 +60,7 @@ async function runSmokeTest() {
     }
     const rendererUpdates = await Promise.all([
       firstWindow.webContents.executeJavaScript(
-        "window.waitForElectronSyncStoreCommit()",
+        "window.flushElectronSyncStore()",
       ),
       secondWindow.webContents.executeJavaScript(
         "window.waitForElectronSyncStoreCommit()",
@@ -102,7 +97,7 @@ async function runSmokeTest() {
     ]);
 
     console.log(
-      `Electron smoke passed: optimistic renderer mutation converged across two renderers; main Commit reached revision ${mainUpdates[0].sync.revision}`,
+      `Electron smoke passed: optimistic renderer mutation flushed and converged across two renderers; main Commit reached revision ${mainUpdates[0].sync.revision}`,
     );
   } finally {
     installation.uninstall();

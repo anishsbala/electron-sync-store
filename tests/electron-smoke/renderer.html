@@ -57,6 +57,14 @@
         };
       };
 
+      window.flushElectronSyncStore = async () => {
+        await store.flush();
+        return {
+          state: store.getState(),
+          sync: store.getSyncState(),
+        };
+      };
+
       window.waitForElectronSyncStoreCommit = () => synchronizationPromise;
     </script>
   </body>
