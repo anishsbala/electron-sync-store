@@ -1,11 +1,15 @@
 {
   "name": "@electron-sync-store/core",
-  "version": "0.0.0",
-  "description": "Framework-independent state primitives for electron-sync-store",
+  "version": "0.1.0",
+  "description": "Typed shallow state primitives and synchronization protocol for electron-sync-store",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -19,5 +23,16 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "keywords": [
+    "electron",
+    "state-management",
+    "typescript",
+    "ipc",
+    "synchronization"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,11 +1,15 @@
 {
   "name": "@electron-sync-store/renderer",
-  "version": "0.0.0",
-  "description": "Optimistic renderer replicas and preload bridge for electron-sync-store",
+  "version": "0.1.0",
+  "description": "Optimistic Electron renderer replicas and secure preload bridge",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -22,12 +26,23 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@electron-sync-store/core": "workspace:*"
+    "@electron-sync-store/core": "workspace:^"
   },
   "peerDependencies": {
     "electron": ">=28"
   },
   "engines": {
     "node": ">=20"
+  },
+  "keywords": [
+    "electron",
+    "state-management",
+    "typescript",
+    "optimistic-updates",
+    "renderer"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

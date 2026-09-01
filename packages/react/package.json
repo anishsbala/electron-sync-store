@@ -1,11 +1,15 @@
 {
   "name": "@electron-sync-store/react",
-  "version": "0.0.0",
-  "description": "React hooks for electron-sync-store renderer replicas",
+  "version": "0.1.0",
+  "description": "Concurrent-safe React selector hooks for electron-sync-store",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -18,14 +22,14 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@electron-sync-store/renderer": "workspace:*",
+    "@electron-sync-store/renderer": "workspace:^",
     "use-sync-external-store": "^1.6.0"
   },
   "peerDependencies": {
     "react": ">=18"
   },
   "devDependencies": {
-    "@electron-sync-store/core": "workspace:*",
+    "@electron-sync-store/core": "workspace:^",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
@@ -36,5 +40,16 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "keywords": [
+    "electron",
+    "react",
+    "state-management",
+    "typescript",
+    "use-sync-external-store"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }

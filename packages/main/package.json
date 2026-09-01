@@ -1,11 +1,15 @@
 {
   "name": "@electron-sync-store/main",
-  "version": "0.0.0",
-  "description": "Electron-independent canonical state coordination for electron-sync-store",
+  "version": "0.1.0",
+  "description": "Canonical main-process state and Electron IPC transport for electron-sync-store",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -18,12 +22,23 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@electron-sync-store/core": "workspace:*"
+    "@electron-sync-store/core": "workspace:^"
   },
   "peerDependencies": {
     "electron": ">=28"
   },
   "engines": {
     "node": ">=20"
+  },
+  "keywords": [
+    "electron",
+    "state-management",
+    "typescript",
+    "ipc",
+    "main-process"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   }
 }
