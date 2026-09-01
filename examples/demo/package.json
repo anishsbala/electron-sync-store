@@ -1,0 +1,33 @@
+{
+  "name": "@electron-sync-store/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/electron/main/index.js",
+  "scripts": {
+    "build": "pnpm build:electron && pnpm build:renderer",
+    "build:electron": "tsc --project tsconfig.electron.json",
+    "build:renderer": "vite build",
+    "dev": "pnpm build && electron .",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@electron-sync-store/main": "workspace:*",
+    "@electron-sync-store/react": "workspace:*",
+    "@electron-sync-store/renderer": "workspace:*",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.1.0",
+    "typescript": "^5.9.2",
+    "vite": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
