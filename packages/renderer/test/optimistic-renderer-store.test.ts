@@ -361,7 +361,7 @@ describe("canonical renderer reconciliation", () => {
     expect(store.getState().counter).toBe(5);
   });
 
-  it("preserves pending state and enters error for a revision gap", async () => {
+  it("preserves pending state and starts recovery for a revision gap", async () => {
     const { store, transport } = await hydratedStore();
     store.setState({ counter: 5 });
 
@@ -369,7 +369,7 @@ describe("canonical renderer reconciliation", () => {
 
     expect(store.getState()).toEqual({ counter: 5, theme: "dark" });
     expect(store.getSyncState()).toMatchObject({
-      status: "error",
+      status: "resyncing",
       revision: 10,
       pendingMutations: 1,
     });
@@ -390,7 +390,7 @@ describe("canonical renderer reconciliation", () => {
       serverEpoch: "epoch-1",
       revision: 10,
       pendingMutations: 1,
-      status: "error",
+      status: "resyncing",
     });
   });
 });
@@ -464,7 +464,7 @@ describe("mutation acknowledgments and failures", () => {
     expect(store.getSyncState()).toMatchObject({ pendingMutations: 1, status: "synced" });
   });
 
-  it("retains an uncertain mutation and reports a transport failure", async () => {
+  it("retains an uncertain mutation and starts transport recovery", async () => {
     const { store, transport } = await hydratedStore();
     store.setState({ counter: 5 });
     const request = transport.mutationRequests[0] as MutationRequest<AppState>;
@@ -476,10 +476,17 @@ describe("mutation acknowledgments and failures", () => {
     expect(store.getSyncState()).toMatchObject({
       revision: 10,
       pendingMutations: 1,
-      status: "error",
+      status: "resyncing",
     });
-    expect(store.getSyncState().error?.message).toBe("IPC disconnected");
-    expect(() => store.setState({ counter: 6 })).toThrow(/store "app" is error/u);
+    expect(store.getSyncState().error).toBeNull();
+    expect(transport.resyncRequests[0]?.pendingMutationIds).toEqual([
+      request.mutationId,
+    ]);
+
+    store.setState({ counter: 6 });
+    expect(store.getState().counter).toBe(6);
+    expect(store.getSyncState().pendingMutations).toBe(2);
+    expect(transport.mutationRequests).toHaveLength(1);
   });
 
   it("ignores late mutation fulfillment and rejection after destroy", async () => {

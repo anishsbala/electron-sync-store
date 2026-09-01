@@ -236,17 +236,18 @@ describe("createRendererStore", () => {
       expect(calls).toEqual(["first", "second", "first", "third"]);
     });
 
-    it("moves to error on an ongoing revision gap without applying it", async () => {
+    it("starts recovery on an ongoing revision gap without applying it", async () => {
       const { store, transport } = await hydratedStore();
 
       transport.deliverCommit(commit(12, { counter: 12 }));
 
       expect(store.getState().counter).toBe(10);
       expect(store.getSyncState()).toMatchObject({
-        status: "error",
+        status: "resyncing",
         revision: 10,
       });
-      expect(store.getSyncState().error?.message).toMatch(/revision gap/u);
+      expect(store.getSyncState().error).toBeNull();
+      expect(transport.resyncRequests).toHaveLength(1);
     });
   });
 
@@ -335,13 +336,14 @@ describe("createRendererStore", () => {
       expect(transport.disconnectCount).toBe(1);
     });
 
-    it("moves a hydrated store to error for an invalid incoming commit", async () => {
+    it("starts recovery for an invalid incoming commit", async () => {
       const { store, transport } = await hydratedStore();
 
       transport.deliverCommit({ type: "commit", protocolVersion: 99 });
 
-      expect(store.getSyncState().status).toBe("error");
+      expect(store.getSyncState().status).toBe("resyncing");
       expect(store.getState().counter).toBe(10);
+      expect(transport.resyncRequests).toHaveLength(1);
     });
 
     it("propagates connect failures and disconnects", async () => {

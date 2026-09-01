@@ -16,6 +16,12 @@ interface DeferredMutation<State extends object> {
   readonly reject: (error: unknown) => void;
 }
 
+interface DeferredResync<State extends object> {
+  readonly request: ResyncRequest;
+  readonly resolve: (result: ResyncResult<State>) => void;
+  readonly reject: (error: unknown) => void;
+}
+
 export class FakeRendererTransport<State extends object>
   implements RendererTransport<State>
 {
@@ -30,6 +36,7 @@ export class FakeRendererTransport<State extends object>
   private resolveConnection: ((snapshot: Snapshot<State>) => void) | undefined;
   private rejectConnection: ((error: unknown) => void) | undefined;
   private readonly deferredMutations: DeferredMutation<State>[] = [];
+  private readonly deferredResyncs: DeferredResync<State>[] = [];
 
   connect(
     request: ConnectRequest,
@@ -102,12 +109,36 @@ export class FakeRendererTransport<State extends object>
     return deferred as DeferredMutation<State>;
   }
 
-  async resync(request: ResyncRequest): Promise<ResyncResult<State>> {
+  resync(request: ResyncRequest): Promise<ResyncResult<State>> {
     this.resyncRequests.push(request);
-    if (this.resyncResult === undefined) {
-      throw new Error("No fake resync result configured");
+    if (this.resyncResult !== undefined) {
+      return Promise.resolve(this.resyncResult);
     }
-    return this.resyncResult;
+    return new Promise<ResyncResult<State>>((resolve, reject) => {
+      this.deferredResyncs.push({ request, resolve, reject });
+    });
+  }
+
+  resolveResync(result: ResyncResult<State>, index = 0): void {
+    const deferred = this.takeDeferredResync(index);
+    deferred.resolve(result);
+  }
+
+  rejectResync(error: unknown, index = 0): void {
+    const deferred = this.takeDeferredResync(index);
+    deferred.reject(error);
+  }
+
+  get pendingResyncCount(): number {
+    return this.deferredResyncs.length;
+  }
+
+  private takeDeferredResync(index: number): DeferredResync<State> {
+    const [deferred] = this.deferredResyncs.splice(index, 1);
+    if (deferred === undefined) {
+      throw new Error(`No pending fake resync at index ${index}`);
+    }
+    return deferred;
   }
 
   disconnect(): void {

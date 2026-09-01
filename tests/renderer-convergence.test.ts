@@ -1,5 +1,4 @@
 import type {
-  Commit,
   ConnectRequest,
   MutationRequest,
   MutationResult,
@@ -23,6 +22,7 @@ interface AppState {
 interface QueuedMutation {
   readonly request: MutationRequest<AppState>;
   readonly resolve: (result: MutationResult<AppState>) => void;
+  readonly reject: (error: unknown) => void;
 }
 
 class InMemoryCoordinator {
@@ -30,16 +30,21 @@ class InMemoryCoordinator {
     counter: 0,
     theme: "dark",
   });
+  readonly mutationRequests: MutationRequest<AppState>[] = [];
 
   private readonly listeners = new Map<
     string,
     (message: unknown) => void
   >();
   private readonly queuedMutations: QueuedMutation[] = [];
+  private readonly dropNextCommitClients = new Set<string>();
 
   constructor() {
     this.canonical.subscribeCommits((commit) => {
-      for (const listener of [...this.listeners.values()]) {
+      for (const [clientId, listener] of [...this.listeners]) {
+        if (this.dropNextCommitClients.delete(clientId)) {
+          continue;
+        }
         listener(commit);
       }
     });
@@ -57,8 +62,9 @@ class InMemoryCoordinator {
         return this.canonical.getSnapshot();
       },
       mutate: (request: MutationRequest<AppState>) =>
-        new Promise<MutationResult<AppState>>((resolve) => {
-          this.queuedMutations.push({ request, resolve });
+        new Promise<MutationResult<AppState>>((resolve, reject) => {
+          this.mutationRequests.push(request);
+          this.queuedMutations.push({ request, resolve, reject });
         }),
       resync: async (request: ResyncRequest): Promise<ResyncResult<AppState>> =>
         this.canonical.handleResync(request),
@@ -70,7 +76,11 @@ class InMemoryCoordinator {
     };
   }
 
-  processMutationFrom(clientId: string): void {
+  dropNextCommitFor(clientId: string): void {
+    this.dropNextCommitClients.add(clientId);
+  }
+
+  processMutationFrom(clientId: string, loseResponse = false): void {
     const index = this.queuedMutations.findIndex(
       (queued) => queued.request.clientId === clientId,
     );
@@ -81,7 +91,12 @@ class InMemoryCoordinator {
     if (queued === undefined) {
       throw new Error("Queued mutation disappeared");
     }
-    queued.resolve(this.canonical.handleMutation(queued.request));
+    const result = this.canonical.handleMutation(queued.request);
+    if (loseResponse) {
+      queued.reject(new Error("Simulated lost mutation response"));
+    } else {
+      queued.resolve(result);
+    }
   }
 }
 
@@ -105,8 +120,9 @@ async function createPair(): Promise<{
 }
 
 async function settleMutations(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 6; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 describe("concurrent renderer convergence", () => {
@@ -153,5 +169,33 @@ describe("concurrent renderer convergence", () => {
     expect(coordinator.canonical.getState().counter).toBe(5);
     expect(rendererA.getState().counter).toBe(5);
     expect(rendererB.getState().counter).toBe(5);
+  });
+
+  it("recovers a lost response and Commit through canonical dedup history", async () => {
+    const { coordinator, rendererA, rendererB } = await createPair();
+    const clientA = rendererA.getSyncState().clientId;
+    coordinator.dropNextCommitFor(clientA);
+    rendererA.setState({ counter: 5 });
+    const flushing = rendererA.flush();
+
+    coordinator.processMutationFrom(clientA, true);
+    await settleMutations();
+
+    await expect(flushing).resolves.toBeUndefined();
+    expect(coordinator.canonical.getState().counter).toBe(5);
+    expect(coordinator.canonical.getRevision()).toBe(1);
+    expect(rendererA.getState().counter).toBe(5);
+    expect(rendererB.getState().counter).toBe(5);
+    expect(rendererA.getSyncState()).toMatchObject({
+      status: "synced",
+      revision: 1,
+      pendingMutations: 0,
+    });
+    expect(rendererB.getSyncState()).toMatchObject({
+      status: "synced",
+      revision: 1,
+      pendingMutations: 0,
+    });
+    expect(coordinator.mutationRequests).toHaveLength(1);
   });
 });
