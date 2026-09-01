@@ -189,7 +189,7 @@ void useConsumer;
   );
 
   runPnpm(
-    ["install", "--offline", "--ignore-scripts"],
+    ["install", "--prefer-offline", "--ignore-scripts"],
     { cwd: consumerDirectory, stdio: "inherit" },
   );
   runPnpm(
